@@ -118,7 +118,7 @@ class Disassembler : public DecoderVisitor {
 #undef DECLARE
 
   using FormToVisitorFnMap = std::unordered_map<
-      std::string,
+      uint32_t,
       std::function<void(Disassembler*, const Instruction*)>>;
   static const FormToVisitorFnMap* GetFormToVisitorFnMap();
 
@@ -126,7 +126,7 @@ class Disassembler : public DecoderVisitor {
   uint32_t form_hash_;
 
   void SetMnemonicFromForm(const std::string& form) {
-    if (form != "Unallocated") {
+    if (form != "unallocated") {
       VIXL_ASSERT(form.find_first_of('_') != std::string::npos);
       mnemonic_ = form.substr(0, form.find_first_of('_'));
     }
