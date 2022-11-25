@@ -184,6 +184,9 @@ class Disassembler : public DecoderVisitor {
   void Disassemble_ZdaS_ZnB_ZmB(const Instruction* instr);
   void Disassemble_Vd4S_Vn16B_Vm16B(const Instruction* instr);
 
+  void DisassembleCpy(const Instruction* instr);
+  void DisassembleSet(const Instruction* instr);
+
   void DisassembleSVEShiftLeftImm(const Instruction* instr);
   void DisassembleSVEShiftRightImm(const Instruction* instr);
   void DisassembleSVEAddSubCarry(const Instruction* instr);
@@ -225,10 +228,23 @@ class Disassembler : public DecoderVisitor {
   void DisassembleNEONScalar2RegMiscOnlyD(const Instruction* instr);
   void DisassembleNEONFPScalar2RegMisc(const Instruction* instr);
 
+  void DisassembleMTELoadTag(const Instruction* instr);
+  void DisassembleMTEStoreTag(const Instruction* instr);
+  void DisassembleMTEStoreTagPair(const Instruction* instr);
+
+  void Disassemble_XdSP_XnSP_Xm(const Instruction* instr);
+  void Disassemble_XdSP_XnSP_uimm6_uimm4(const Instruction* instr);
+  void Disassemble_Xd_XnSP_Xm(const Instruction* instr);
+  void Disassemble_Xd_XnSP_XmSP(const Instruction* instr);
+
   void Format(const Instruction* instr,
               const char* mnemonic,
               const char* format0,
               const char* format1 = NULL);
+  void FormatWithDecodedMnemonic(const Instruction* instr,
+                                 const char* format0,
+                                 const char* format1 = NULL);
+
   void Substitute(const Instruction* instr, const char* string);
   int SubstituteField(const Instruction* instr, const char* format);
   int SubstituteRegisterField(const Instruction* instr, const char* format);

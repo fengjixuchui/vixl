@@ -183,6 +183,7 @@ BitExtractFn DecodeNode::GetBitExtractFunctionHelper(uint32_t x, uint32_t y) {
     INSTANTIATE_TEMPLATE_M(00000010);
     INSTANTIATE_TEMPLATE_M(0000001f);
     INSTANTIATE_TEMPLATE_M(00000060);
+    INSTANTIATE_TEMPLATE_M(000000df);
     INSTANTIATE_TEMPLATE_M(00000100);
     INSTANTIATE_TEMPLATE_M(00000200);
     INSTANTIATE_TEMPLATE_M(00000400);
@@ -466,7 +467,8 @@ CompiledDecodeNode* DecodeNode::Compile(Decoder* decoder) {
 
     // Create a compiled node that contains a table with an entry for every bit
     // pattern.
-    CreateCompiledNode(bit_extract_fn, 1U << GetSampledBitsCount());
+    CreateCompiledNode(bit_extract_fn,
+                       static_cast<size_t>(1) << GetSampledBitsCount());
     VIXL_ASSERT(compiled_node_ != NULL);
 
     // When we find a pattern matches the representation, set the node's decode

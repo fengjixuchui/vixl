@@ -26,6 +26,8 @@
 
 #ifdef VIXL_INCLUDE_SIMULATOR_AARCH64
 
+#include <sys/mman.h>
+
 #include <errno.h>
 #include <unistd.h>
 
@@ -41,6 +43,8 @@ namespace aarch64 {
 using vixl::internal::SimFloat16;
 
 const Instruction* Simulator::kEndOfSimAddress = NULL;
+
+bool MetaDataDepot::MetaDataMTE::is_active = false;
 
 void SimSystemRegister::SetBits(int msb, int lsb, uint32_t bits) {
   int width = msb - lsb + 1;
@@ -65,7 +69,6 @@ SimSystemRegister SimSystemRegister::DefaultValueFor(SystemRegister id) {
       return SimSystemRegister();
   }
 }
-
 
 const Simulator::FormToVisitorFnMap* Simulator::GetFormToVisitorFnMap() {
   static const FormToVisitorFnMap form_to_visitor = {
@@ -406,6 +409,65 @@ const Simulator::FormToVisitorFnMap* Simulator::GetFormToVisitorFnMap() {
       {"usdot_asimdsame2_d"_h, &Simulator::VisitNEON3SameExtra},
       {"sudot_asimdelem_d"_h, &Simulator::SimulateNEONDotProdByElement},
       {"usdot_asimdelem_d"_h, &Simulator::SimulateNEONDotProdByElement},
+      {"addg_64_addsub_immtags"_h, &Simulator::SimulateMTEAddSubTag},
+      {"gmi_64g_dp_2src"_h, &Simulator::SimulateMTETagMaskInsert},
+      {"irg_64i_dp_2src"_h, &Simulator::Simulate_XdSP_XnSP_Xm},
+      {"ldg_64loffset_ldsttags"_h, &Simulator::SimulateMTELoadTag},
+      {"st2g_64soffset_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"st2g_64spost_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"st2g_64spre_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"stgp_64_ldstpair_off"_h, &Simulator::SimulateMTEStoreTagPair},
+      {"stgp_64_ldstpair_post"_h, &Simulator::SimulateMTEStoreTagPair},
+      {"stgp_64_ldstpair_pre"_h, &Simulator::SimulateMTEStoreTagPair},
+      {"stg_64soffset_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"stg_64spost_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"stg_64spre_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"stz2g_64soffset_ldsttags"_h,
+       &Simulator::Simulator::SimulateMTEStoreTag},
+      {"stz2g_64spost_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"stz2g_64spre_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"stzg_64soffset_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"stzg_64spost_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"stzg_64spre_ldsttags"_h, &Simulator::Simulator::SimulateMTEStoreTag},
+      {"subg_64_addsub_immtags"_h, &Simulator::SimulateMTEAddSubTag},
+      {"subps_64s_dp_2src"_h, &Simulator::SimulateMTESubPointer},
+      {"subp_64s_dp_2src"_h, &Simulator::SimulateMTESubPointer},
+      {"cpyen_cpy_memcms"_h, &Simulator::SimulateCpyE},
+      {"cpyern_cpy_memcms"_h, &Simulator::SimulateCpyE},
+      {"cpyewn_cpy_memcms"_h, &Simulator::SimulateCpyE},
+      {"cpye_cpy_memcms"_h, &Simulator::SimulateCpyE},
+      {"cpyfen_cpy_memcms"_h, &Simulator::SimulateCpyE},
+      {"cpyfern_cpy_memcms"_h, &Simulator::SimulateCpyE},
+      {"cpyfewn_cpy_memcms"_h, &Simulator::SimulateCpyE},
+      {"cpyfe_cpy_memcms"_h, &Simulator::SimulateCpyE},
+      {"cpyfmn_cpy_memcms"_h, &Simulator::SimulateCpyM},
+      {"cpyfmrn_cpy_memcms"_h, &Simulator::SimulateCpyM},
+      {"cpyfmwn_cpy_memcms"_h, &Simulator::SimulateCpyM},
+      {"cpyfm_cpy_memcms"_h, &Simulator::SimulateCpyM},
+      {"cpyfpn_cpy_memcms"_h, &Simulator::SimulateCpyFP},
+      {"cpyfprn_cpy_memcms"_h, &Simulator::SimulateCpyFP},
+      {"cpyfpwn_cpy_memcms"_h, &Simulator::SimulateCpyFP},
+      {"cpyfp_cpy_memcms"_h, &Simulator::SimulateCpyFP},
+      {"cpymn_cpy_memcms"_h, &Simulator::SimulateCpyM},
+      {"cpymrn_cpy_memcms"_h, &Simulator::SimulateCpyM},
+      {"cpymwn_cpy_memcms"_h, &Simulator::SimulateCpyM},
+      {"cpym_cpy_memcms"_h, &Simulator::SimulateCpyM},
+      {"cpypn_cpy_memcms"_h, &Simulator::SimulateCpyP},
+      {"cpyprn_cpy_memcms"_h, &Simulator::SimulateCpyP},
+      {"cpypwn_cpy_memcms"_h, &Simulator::SimulateCpyP},
+      {"cpyp_cpy_memcms"_h, &Simulator::SimulateCpyP},
+      {"setp_set_memcms"_h, &Simulator::SimulateSetP},
+      {"setpn_set_memcms"_h, &Simulator::SimulateSetP},
+      {"setgp_set_memcms"_h, &Simulator::SimulateSetGP},
+      {"setgpn_set_memcms"_h, &Simulator::SimulateSetGP},
+      {"setm_set_memcms"_h, &Simulator::SimulateSetM},
+      {"setmn_set_memcms"_h, &Simulator::SimulateSetM},
+      {"setgm_set_memcms"_h, &Simulator::SimulateSetGM},
+      {"setgmn_set_memcms"_h, &Simulator::SimulateSetGM},
+      {"sete_set_memcms"_h, &Simulator::SimulateSetE},
+      {"seten_set_memcms"_h, &Simulator::SimulateSetE},
+      {"setge_set_memcms"_h, &Simulator::SimulateSetE},
+      {"setgen_set_memcms"_h, &Simulator::SimulateSetE},
   };
   return &form_to_visitor;
 }
@@ -428,6 +490,9 @@ Simulator::Simulator(Decoder* decoder, FILE* stream, SimStack::Allocated stack)
   stream_ = stream;
 
   print_disasm_ = new PrintDisassembler(stream_);
+
+  memory_.AppendMetaData(&meta_data_);
+
   // The Simulator and Disassembler share the same available list, held by the
   // auditor. The Disassembler only annotates instructions with features that
   // are _not_ available, so registering the auditor should have no effect
@@ -897,7 +962,7 @@ int64_t Simulator::ShiftOperand(unsigned reg_size,
     bool is_negative = (uvalue & GetSignMask(reg_size)) != 0;
     // The behavior is undefined in c++ if the shift amount greater than or
     // equal to the register lane size. Work out the shifted result based on
-    // architectural behavior before performing the c++ type shfit operations.
+    // architectural behavior before performing the c++ type shift operations.
     switch (shift_type) {
       case LSL:
         if (amount >= reg_size) {
@@ -1896,6 +1961,24 @@ void Simulator::PrintPAccess(int code, const char* op, uintptr_t address) {
             clr_normal);
     address += kQRegSizeInBytes;
   }
+}
+
+void Simulator::PrintMemTransfer(uintptr_t dst, uintptr_t src, uint8_t value) {
+  fprintf(stream_,
+          "#               %s: %s0x%016" PRIxPTR " %s<- %s0x%02x%s",
+          clr_reg_name,
+          clr_memory_address,
+          dst,
+          clr_normal,
+          clr_reg_value,
+          value,
+          clr_normal);
+
+  fprintf(stream_,
+          " <- %s0x%016" PRIxPTR "%s\n",
+          clr_memory_address,
+          src,
+          clr_normal);
 }
 
 void Simulator::PrintRead(int rt_code,
@@ -3667,8 +3750,8 @@ void Simulator::VisitUnconditionalBranchToRegister(const Instruction* instr) {
     }
   }
 
-  WritePc(Instruction::Cast(addr));
   WriteNextBType(GetBTypeFromInstruction(instr));
+  WritePc(Instruction::Cast(addr));
 }
 
 
@@ -6432,12 +6515,22 @@ void Simulator::SysOp_W(int op, int64_t val) {
     case CVAU:
     case CVAP:
     case CVADP:
-    case CIVAC: {
+    case CIVAC:
+    case CGVAC:
+    case CGDVAC:
+    case CGVAP:
+    case CGDVAP:
+    case CIGVAC:
+    case CIGDVAC: {
       // Perform a placeholder memory access to ensure that we have read access
-      // to the specified address.
+      // to the specified address. The read access does not require a tag match,
+      // so temporarily disable MTE.
+      bool mte_enabled = MetaDataDepot::MetaDataMTE::IsActive();
+      MetaDataDepot::MetaDataMTE::SetActive(false);
       volatile uint8_t y = MemRead<uint8_t>(val);
+      MetaDataDepot::MetaDataMTE::SetActive(mte_enabled);
       USE(y);
-      // TODO: Implement "case ZVA:".
+      // TODO: Implement ZVA, GVA, GZVA.
       break;
     }
     default:
@@ -6445,53 +6538,132 @@ void Simulator::SysOp_W(int op, int64_t val) {
   }
 }
 
+void Simulator::PACHelper(int dst,
+                          int src,
+                          PACKey key,
+                          decltype(&Simulator::AddPAC) pac_fn) {
+  VIXL_ASSERT((dst == 17) || (dst == 30));
+  VIXL_ASSERT((src == -1) || (src == 16) || (src == 31));
 
-// clang-format off
-#define PAUTH_SYSTEM_MODES(V)                                     \
-  V(A1716, 17, ReadXRegister(16),                      kPACKeyIA) \
-  V(B1716, 17, ReadXRegister(16),                      kPACKeyIB) \
-  V(AZ,    30, 0x00000000,                             kPACKeyIA) \
-  V(BZ,    30, 0x00000000,                             kPACKeyIB) \
-  V(ASP,   30, ReadXRegister(31, Reg31IsStackPointer), kPACKeyIA) \
-  V(BSP,   30, ReadXRegister(31, Reg31IsStackPointer), kPACKeyIB)
-// clang-format on
-
+  uint64_t modifier = (src == -1) ? 0 : ReadXRegister(src, Reg31IsStackPointer);
+  uint64_t result =
+      (this->*pac_fn)(ReadXRegister(dst), modifier, key, kInstructionPointer);
+  WriteXRegister(dst, result);
+}
 
 void Simulator::VisitSystem(const Instruction* instr) {
-  // Some system instructions hijack their Op and Cp fields to represent a
-  // range of immediates instead of indicating a different instruction. This
-  // makes the decoding tricky.
-  if (instr->GetInstructionBits() == XPACLRI) {
-    WriteXRegister(30, StripPAC(ReadXRegister(30), kInstructionPointer));
-  } else if (instr->Mask(SystemPStateFMask) == SystemPStateFixed) {
-    switch (instr->Mask(SystemPStateMask)) {
-      case CFINV:
-        ReadNzcv().SetC(!ReadC());
-        break;
-      case AXFLAG:
-        ReadNzcv().SetN(0);
-        ReadNzcv().SetZ(ReadNzcv().GetZ() | ReadNzcv().GetV());
-        ReadNzcv().SetC(ReadNzcv().GetC() & ~ReadNzcv().GetV());
-        ReadNzcv().SetV(0);
-        break;
-      case XAFLAG: {
-        // Can't set the flags in place due to the logical dependencies.
-        uint32_t n = (~ReadNzcv().GetC() & ~ReadNzcv().GetZ()) & 1;
-        uint32_t z = ReadNzcv().GetZ() & ReadNzcv().GetC();
-        uint32_t c = ReadNzcv().GetC() | ReadNzcv().GetZ();
-        uint32_t v = ~ReadNzcv().GetC() & ReadNzcv().GetZ();
-        ReadNzcv().SetN(n);
-        ReadNzcv().SetZ(z);
-        ReadNzcv().SetC(c);
-        ReadNzcv().SetV(v);
-        break;
-      }
+  PACKey pac_key = kPACKeyIA;  // Default key for PAC/AUTH handling.
+
+  switch (form_hash_) {
+    case "cfinv_m_pstate"_h:
+      ReadNzcv().SetC(!ReadC());
+      break;
+    case "axflag_m_pstate"_h:
+      ReadNzcv().SetN(0);
+      ReadNzcv().SetZ(ReadNzcv().GetZ() | ReadNzcv().GetV());
+      ReadNzcv().SetC(ReadNzcv().GetC() & ~ReadNzcv().GetV());
+      ReadNzcv().SetV(0);
+      break;
+    case "xaflag_m_pstate"_h: {
+      // Can't set the flags in place due to the logical dependencies.
+      uint32_t n = (~ReadNzcv().GetC() & ~ReadNzcv().GetZ()) & 1;
+      uint32_t z = ReadNzcv().GetZ() & ReadNzcv().GetC();
+      uint32_t c = ReadNzcv().GetC() | ReadNzcv().GetZ();
+      uint32_t v = ~ReadNzcv().GetC() & ReadNzcv().GetZ();
+      ReadNzcv().SetN(n);
+      ReadNzcv().SetZ(z);
+      ReadNzcv().SetC(c);
+      ReadNzcv().SetV(v);
+      break;
     }
-  } else if (instr->Mask(SystemPAuthFMask) == SystemPAuthFixed) {
-    // Check BType allows PACI[AB]SP instructions.
-    if (PcIsInGuardedPage()) {
-      Instr i = instr->Mask(SystemPAuthMask);
-      if ((i == PACIASP) || (i == PACIBSP)) {
+    case "xpaclri_hi_hints"_h:
+      WriteXRegister(30, StripPAC(ReadXRegister(30), kInstructionPointer));
+      break;
+    case "clrex_bn_barriers"_h:
+      PrintExclusiveAccessWarning();
+      ClearLocalMonitor();
+      break;
+    case "msr_sr_systemmove"_h:
+      switch (instr->GetImmSystemRegister()) {
+        case NZCV:
+          ReadNzcv().SetRawValue(ReadWRegister(instr->GetRt()));
+          LogSystemRegister(NZCV);
+          break;
+        case FPCR:
+          ReadFpcr().SetRawValue(ReadWRegister(instr->GetRt()));
+          LogSystemRegister(FPCR);
+          break;
+        default:
+          VIXL_UNIMPLEMENTED();
+      }
+      break;
+    case "mrs_rs_systemmove"_h:
+      switch (instr->GetImmSystemRegister()) {
+        case NZCV:
+          WriteXRegister(instr->GetRt(), ReadNzcv().GetRawValue());
+          break;
+        case FPCR:
+          WriteXRegister(instr->GetRt(), ReadFpcr().GetRawValue());
+          break;
+        case RNDR:
+        case RNDRRS: {
+          uint64_t high = jrand48(rand_state_);
+          uint64_t low = jrand48(rand_state_);
+          uint64_t rand_num = (high << 32) | (low & 0xffffffff);
+          WriteXRegister(instr->GetRt(), rand_num);
+          // Simulate successful random number generation.
+          // TODO: Return failure occasionally as a random number cannot be
+          // returned in a period of time.
+          ReadNzcv().SetRawValue(NoFlag);
+          LogSystemRegister(NZCV);
+          break;
+        }
+        default:
+          VIXL_UNIMPLEMENTED();
+      }
+      break;
+    case "nop_hi_hints"_h:
+    case "esb_hi_hints"_h:
+    case "csdb_hi_hints"_h:
+      break;
+    case "bti_hb_hints"_h:
+      switch (instr->GetImmHint()) {
+        case BTI_jc:
+          break;
+        case BTI:
+          if (PcIsInGuardedPage() && (ReadBType() != DefaultBType)) {
+            VIXL_ABORT_WITH_MSG("Executing BTI with wrong BType.");
+          }
+          break;
+        case BTI_c:
+          if (PcIsInGuardedPage() &&
+              (ReadBType() == BranchFromGuardedNotToIP)) {
+            VIXL_ABORT_WITH_MSG("Executing BTI c with wrong BType.");
+          }
+          break;
+        case BTI_j:
+          if (PcIsInGuardedPage() && (ReadBType() == BranchAndLink)) {
+            VIXL_ABORT_WITH_MSG("Executing BTI j with wrong BType.");
+          }
+          break;
+        default:
+          VIXL_UNREACHABLE();
+      }
+      return;
+    case "pacib1716_hi_hints"_h:
+      pac_key = kPACKeyIB;
+      VIXL_FALLTHROUGH();
+    case "pacia1716_hi_hints"_h:
+      PACHelper(17, 16, pac_key, &Simulator::AddPAC);
+      break;
+    case "pacibsp_hi_hints"_h:
+      pac_key = kPACKeyIB;
+      VIXL_FALLTHROUGH();
+    case "paciasp_hi_hints"_h:
+      PACHelper(30, 31, pac_key, &Simulator::AddPAC);
+
+      // Check BType allows PACI[AB]SP instructions.
+      if (PcIsInGuardedPage()) {
         switch (ReadBType()) {
           case BranchFromGuardedNotToIP:
           // TODO: This case depends on the value of SCTLR_EL1.BT0, which we
@@ -6503,117 +6675,41 @@ void Simulator::VisitSystem(const Instruction* instr) {
             break;
         }
       }
-    }
-
-    switch (instr->Mask(SystemPAuthMask)) {
-#define DEFINE_PAUTH_FUNCS(SUFFIX, DST, MOD, KEY)                              \
-  case PACI##SUFFIX:                                                           \
-    WriteXRegister(DST,                                                        \
-                   AddPAC(ReadXRegister(DST), MOD, KEY, kInstructionPointer)); \
-    break;                                                                     \
-  case AUTI##SUFFIX:                                                           \
-    WriteXRegister(DST,                                                        \
-                   AuthPAC(ReadXRegister(DST),                                 \
-                           MOD,                                                \
-                           KEY,                                                \
-                           kInstructionPointer));                              \
-    break;
-
-      PAUTH_SYSTEM_MODES(DEFINE_PAUTH_FUNCS)
-#undef DEFINE_PAUTH_FUNCS
-    }
-  } else if (instr->Mask(SystemExclusiveMonitorFMask) ==
-             SystemExclusiveMonitorFixed) {
-    VIXL_ASSERT(instr->Mask(SystemExclusiveMonitorMask) == CLREX);
-    switch (instr->Mask(SystemExclusiveMonitorMask)) {
-      case CLREX: {
-        PrintExclusiveAccessWarning();
-        ClearLocalMonitor();
-        break;
-      }
-    }
-  } else if (instr->Mask(SystemSysRegFMask) == SystemSysRegFixed) {
-    switch (instr->Mask(SystemSysRegMask)) {
-      case MRS: {
-        switch (instr->GetImmSystemRegister()) {
-          case NZCV:
-            WriteXRegister(instr->GetRt(), ReadNzcv().GetRawValue());
-            break;
-          case FPCR:
-            WriteXRegister(instr->GetRt(), ReadFpcr().GetRawValue());
-            break;
-          case RNDR:
-          case RNDRRS: {
-            uint64_t high = jrand48(rand_state_);
-            uint64_t low = jrand48(rand_state_);
-            uint64_t rand_num = (high << 32) | (low & 0xffffffff);
-            WriteXRegister(instr->GetRt(), rand_num);
-            // Simulate successful random number generation.
-            // TODO: Return failure occasionally as a random number cannot be
-            // returned in a period of time.
-            ReadNzcv().SetRawValue(NoFlag);
-            LogSystemRegister(NZCV);
-            break;
-          }
-          default:
-            VIXL_UNIMPLEMENTED();
-        }
-        break;
-      }
-      case MSR: {
-        switch (instr->GetImmSystemRegister()) {
-          case NZCV:
-            ReadNzcv().SetRawValue(ReadWRegister(instr->GetRt()));
-            LogSystemRegister(NZCV);
-            break;
-          case FPCR:
-            ReadFpcr().SetRawValue(ReadWRegister(instr->GetRt()));
-            LogSystemRegister(FPCR);
-            break;
-          default:
-            VIXL_UNIMPLEMENTED();
-        }
-        break;
-      }
-    }
-  } else if (instr->Mask(SystemHintFMask) == SystemHintFixed) {
-    VIXL_ASSERT(instr->Mask(SystemHintMask) == HINT);
-    switch (instr->GetImmHint()) {
-      case NOP:
-      case ESB:
-      case CSDB:
-      case BTI_jc:
-        break;
-      case BTI:
-        if (PcIsInGuardedPage() && (ReadBType() != DefaultBType)) {
-          VIXL_ABORT_WITH_MSG("Executing BTI with wrong BType.");
-        }
-        break;
-      case BTI_c:
-        if (PcIsInGuardedPage() && (ReadBType() == BranchFromGuardedNotToIP)) {
-          VIXL_ABORT_WITH_MSG("Executing BTI c with wrong BType.");
-        }
-        break;
-      case BTI_j:
-        if (PcIsInGuardedPage() && (ReadBType() == BranchAndLink)) {
-          VIXL_ABORT_WITH_MSG("Executing BTI j with wrong BType.");
-        }
-        break;
-      default:
-        VIXL_UNIMPLEMENTED();
-    }
-  } else if (instr->Mask(MemBarrierFMask) == MemBarrierFixed) {
-    __sync_synchronize();
-  } else if ((instr->Mask(SystemSysFMask) == SystemSysFixed)) {
-    switch (instr->Mask(SystemSysMask)) {
-      case SYS:
-        SysOp_W(instr->GetSysOp(), ReadXRegister(instr->GetRt()));
-        break;
-      default:
-        VIXL_UNIMPLEMENTED();
-    }
-  } else {
-    VIXL_UNIMPLEMENTED();
+      break;
+    case "pacibz_hi_hints"_h:
+      pac_key = kPACKeyIB;
+      VIXL_FALLTHROUGH();
+    case "paciaz_hi_hints"_h:
+      PACHelper(30, -1, pac_key, &Simulator::AddPAC);
+      break;
+    case "autib1716_hi_hints"_h:
+      pac_key = kPACKeyIB;
+      VIXL_FALLTHROUGH();
+    case "autia1716_hi_hints"_h:
+      PACHelper(17, 16, pac_key, &Simulator::AuthPAC);
+      break;
+    case "autibsp_hi_hints"_h:
+      pac_key = kPACKeyIB;
+      VIXL_FALLTHROUGH();
+    case "autiasp_hi_hints"_h:
+      PACHelper(30, 31, pac_key, &Simulator::AuthPAC);
+      break;
+    case "autibz_hi_hints"_h:
+      pac_key = kPACKeyIB;
+      VIXL_FALLTHROUGH();
+    case "autiaz_hi_hints"_h:
+      PACHelper(30, -1, pac_key, &Simulator::AuthPAC);
+      break;
+    case "dsb_bo_barriers"_h:
+    case "dmb_bo_barriers"_h:
+    case "isb_bi_barriers"_h:
+      __sync_synchronize();
+      break;
+    case "sys_cr_systeminstrs"_h:
+      SysOp_W(instr->GetSysOp(), ReadXRegister(instr->GetRt()));
+      break;
+    default:
+      VIXL_UNIMPLEMENTED();
   }
 }
 
@@ -6647,6 +6743,12 @@ void Simulator::VisitException(const Instruction* instr) {
           return;
         case kRestoreCPUFeaturesOpcode:
           DoRestoreCPUFeatures(instr);
+          return;
+        case kMTEActive:
+          MetaDataDepot::MetaDataMTE::SetActive(true);
+          return;
+        case kMTEInactive:
+          MetaDataDepot::MetaDataMTE::SetActive(false);
           return;
         default:
           HostBreakpoint();
@@ -11787,7 +11889,7 @@ void Simulator::VisitSVELoadAndBroadcastElement(const Instruction* instr) {
   VIXL_ASSERT(msize_in_bytes_log2 <= esize_in_bytes_log2);
   VectorFormat vform = SVEFormatFromLaneSizeInBytesLog2(esize_in_bytes_log2);
   uint64_t offset = instr->ExtractBits(21, 16) << msize_in_bytes_log2;
-  uint64_t base = ReadXRegister(instr->GetRn()) + offset;
+  uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer) + offset;
   VectorFormat unpack_vform =
       SVEFormatFromLaneSizeInBytesLog2(msize_in_bytes_log2);
   SimVRegister temp;
@@ -11805,7 +11907,8 @@ void Simulator::VisitSVELoadPredicateRegister(const Instruction* instr) {
       int pl = GetPredicateLengthInBytes();
       int imm9 = (instr->ExtractBits(21, 16) << 3) | instr->ExtractBits(12, 10);
       uint64_t multiplier = ExtractSignedBitfield64(8, 0, imm9);
-      uint64_t address = ReadXRegister(instr->GetRn()) + multiplier * pl;
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
+      uint64_t address = base + multiplier * pl;
       for (int i = 0; i < pl; i++) {
         pt.Insert(i, MemRead<uint8_t>(address + i));
       }
@@ -11825,7 +11928,8 @@ void Simulator::VisitSVELoadVectorRegister(const Instruction* instr) {
       int vl = GetVectorLengthInBytes();
       int imm9 = (instr->ExtractBits(21, 16) << 3) | instr->ExtractBits(12, 10);
       uint64_t multiplier = ExtractSignedBitfield64(8, 0, imm9);
-      uint64_t address = ReadXRegister(instr->GetRn()) + multiplier * vl;
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
+      uint64_t address = base + multiplier * vl;
       for (int i = 0; i < vl; i++) {
         zt.Insert(i, MemRead<uint8_t>(address + i));
       }
@@ -12063,9 +12167,10 @@ void Simulator::VisitSVEContiguousFirstFaultLoad_ScalarPlusScalar(
   int esize_in_bytes_log2 = instr->GetSVEEsizeFromDtype(is_signed);
   VIXL_ASSERT(msize_in_bytes_log2 <= esize_in_bytes_log2);
   VectorFormat vform = SVEFormatFromLaneSizeInBytesLog2(esize_in_bytes_log2);
+  uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
   uint64_t offset = ReadXRegister(instr->GetRm());
   offset <<= msize_in_bytes_log2;
-  LogicSVEAddressVector addr(ReadXRegister(instr->GetRn()) + offset);
+  LogicSVEAddressVector addr(base + offset);
   addr.SetMsizeInBytesLog2(msize_in_bytes_log2);
   SVEFaultTolerantLoadHelper(vform,
                              ReadPRegister(instr->GetPgLow8()),
@@ -12108,9 +12213,10 @@ void Simulator::VisitSVEContiguousNonFaultLoad_ScalarPlusImm(
   VectorFormat vform = SVEFormatFromLaneSizeInBytesLog2(esize_in_bytes_log2);
   int vl = GetVectorLengthInBytes();
   int vl_divisor_log2 = esize_in_bytes_log2 - msize_in_bytes_log2;
+  uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
   uint64_t offset =
       (instr->ExtractSignedBits(19, 16) * vl) / (1 << vl_divisor_log2);
-  LogicSVEAddressVector addr(ReadXRegister(instr->GetRn()) + offset);
+  LogicSVEAddressVector addr(base + offset);
   addr.SetMsizeInBytesLog2(msize_in_bytes_log2);
   SVEFaultTolerantLoadHelper(vform,
                              ReadPRegister(instr->GetPgLow8()),
@@ -12144,8 +12250,9 @@ void Simulator::VisitSVEContiguousNonTemporalLoad_ScalarPlusImm(
   }
   int msize_in_bytes_log2 = LaneSizeInBytesLog2FromFormat(vform);
   int vl = GetVectorLengthInBytes();
+  uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
   uint64_t offset = instr->ExtractSignedBits(19, 16) * vl;
-  LogicSVEAddressVector addr(ReadXRegister(instr->GetRn()) + offset);
+  LogicSVEAddressVector addr(base + offset);
   addr.SetMsizeInBytesLog2(msize_in_bytes_log2);
   SVEStructuredLoadHelper(vform,
                           pg,
@@ -12177,8 +12284,9 @@ void Simulator::VisitSVEContiguousNonTemporalLoad_ScalarPlusScalar(
       break;
   }
   int msize_in_bytes_log2 = LaneSizeInBytesLog2FromFormat(vform);
+  uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
   uint64_t offset = ReadXRegister(instr->GetRm()) << msize_in_bytes_log2;
-  LogicSVEAddressVector addr(ReadXRegister(instr->GetRn()) + offset);
+  LogicSVEAddressVector addr(base + offset);
   addr.SetMsizeInBytesLog2(msize_in_bytes_log2);
   SVEStructuredLoadHelper(vform,
                           pg,
@@ -12320,7 +12428,7 @@ void Simulator::VisitSVE32BitScatterStore_ScalarPlus32BitScaledOffsets(
       unsigned msize_in_bytes_log2 = instr->GetSVEMsizeFromDtype(false);
       VIXL_ASSERT(kDRegSizeInBytesLog2 >= msize_in_bytes_log2);
       int scale = instr->ExtractBit(21) * msize_in_bytes_log2;
-      uint64_t base = ReadXRegister(instr->GetRn());
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
       SVEOffsetModifier mod =
           (instr->ExtractBit(14) == 1) ? SVE_SXTW : SVE_UXTW;
       LogicSVEAddressVector addr(base,
@@ -12350,7 +12458,7 @@ void Simulator::VisitSVE32BitScatterStore_ScalarPlus32BitUnscaledOffsets(
     case ST1W_z_p_bz_s_x32_unscaled: {
       unsigned msize_in_bytes_log2 = instr->GetSVEMsizeFromDtype(false);
       VIXL_ASSERT(kDRegSizeInBytesLog2 >= msize_in_bytes_log2);
-      uint64_t base = ReadXRegister(instr->GetRn());
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
       SVEOffsetModifier mod =
           (instr->ExtractBit(14) == 1) ? SVE_SXTW : SVE_UXTW;
       LogicSVEAddressVector addr(base,
@@ -12405,7 +12513,7 @@ void Simulator::VisitSVE64BitScatterStore_ScalarPlus64BitScaledOffsets(
       unsigned msize_in_bytes_log2 = instr->GetSVEMsizeFromDtype(false);
       VIXL_ASSERT(kDRegSizeInBytesLog2 >= msize_in_bytes_log2);
       int scale = instr->ExtractBit(21) * msize_in_bytes_log2;
-      uint64_t base = ReadXRegister(instr->GetRn());
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
       LogicSVEAddressVector addr(base,
                                  &ReadVRegister(instr->GetRm()),
                                  kFormatVnD,
@@ -12434,7 +12542,7 @@ void Simulator::VisitSVE64BitScatterStore_ScalarPlus64BitUnscaledOffsets(
     case ST1W_z_p_bz_d_64_unscaled: {
       unsigned msize_in_bytes_log2 = instr->GetSVEMsizeFromDtype(false);
       VIXL_ASSERT(kDRegSizeInBytesLog2 >= msize_in_bytes_log2);
-      uint64_t base = ReadXRegister(instr->GetRn());
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
       LogicSVEAddressVector addr(base,
                                  &ReadVRegister(instr->GetRm()),
                                  kFormatVnD,
@@ -12462,7 +12570,7 @@ void Simulator::VisitSVE64BitScatterStore_ScalarPlusUnpacked32BitScaledOffsets(
       unsigned msize_in_bytes_log2 = instr->GetSVEMsizeFromDtype(false);
       VIXL_ASSERT(kDRegSizeInBytesLog2 >= msize_in_bytes_log2);
       int scale = instr->ExtractBit(21) * msize_in_bytes_log2;
-      uint64_t base = ReadXRegister(instr->GetRn());
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
       SVEOffsetModifier mod =
           (instr->ExtractBit(14) == 1) ? SVE_SXTW : SVE_UXTW;
       LogicSVEAddressVector addr(base,
@@ -12494,7 +12602,7 @@ void Simulator::
     case ST1W_z_p_bz_d_x32_unscaled: {
       unsigned msize_in_bytes_log2 = instr->GetSVEMsizeFromDtype(false);
       VIXL_ASSERT(kDRegSizeInBytesLog2 >= msize_in_bytes_log2);
-      uint64_t base = ReadXRegister(instr->GetRn());
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
       SVEOffsetModifier mod =
           (instr->ExtractBit(14) == 1) ? SVE_SXTW : SVE_UXTW;
       LogicSVEAddressVector addr(base,
@@ -12567,8 +12675,9 @@ void Simulator::VisitSVEContiguousNonTemporalStore_ScalarPlusImm(
   }
   int msize_in_bytes_log2 = LaneSizeInBytesLog2FromFormat(vform);
   int vl = GetVectorLengthInBytes();
+  uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
   uint64_t offset = instr->ExtractSignedBits(19, 16) * vl;
-  LogicSVEAddressVector addr(ReadXRegister(instr->GetRn()) + offset);
+  LogicSVEAddressVector addr(base + offset);
   addr.SetMsizeInBytesLog2(msize_in_bytes_log2);
   SVEStructuredStoreHelper(vform, pg, instr->GetRt(), addr);
 }
@@ -12596,8 +12705,9 @@ void Simulator::VisitSVEContiguousNonTemporalStore_ScalarPlusScalar(
       break;
   }
   int msize_in_bytes_log2 = LaneSizeInBytesLog2FromFormat(vform);
+  uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
   uint64_t offset = ReadXRegister(instr->GetRm()) << msize_in_bytes_log2;
-  LogicSVEAddressVector addr(ReadXRegister(instr->GetRn()) + offset);
+  LogicSVEAddressVector addr(base + offset);
   addr.SetMsizeInBytesLog2(msize_in_bytes_log2);
   SVEStructuredStoreHelper(vform, pg, instr->GetRt(), addr);
 }
@@ -12614,11 +12724,12 @@ void Simulator::VisitSVEContiguousStore_ScalarPlusImm(
       int esize_in_bytes_log2 = instr->GetSVEEsizeFromDtype(false);
       VIXL_ASSERT(esize_in_bytes_log2 >= msize_in_bytes_log2);
       int vl_divisor_log2 = esize_in_bytes_log2 - msize_in_bytes_log2;
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
       uint64_t offset =
           (instr->ExtractSignedBits(19, 16) * vl) / (1 << vl_divisor_log2);
       VectorFormat vform =
           SVEFormatFromLaneSizeInBytesLog2(esize_in_bytes_log2);
-      LogicSVEAddressVector addr(ReadXRegister(instr->GetRn()) + offset);
+      LogicSVEAddressVector addr(base + offset);
       addr.SetMsizeInBytesLog2(msize_in_bytes_log2);
       SVEStructuredStoreHelper(vform,
                                ReadPRegister(instr->GetPgLow8()),
@@ -12639,11 +12750,12 @@ void Simulator::VisitSVEContiguousStore_ScalarPlusScalar(
     case ST1D_z_p_br:
     case ST1H_z_p_br:
     case ST1W_z_p_br: {
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
       uint64_t offset = ReadXRegister(instr->GetRm());
       offset <<= instr->ExtractBits(24, 23);
       VectorFormat vform =
           SVEFormatFromLaneSizeInBytesLog2(instr->ExtractBits(22, 21));
-      LogicSVEAddressVector addr(ReadXRegister(instr->GetRn()) + offset);
+      LogicSVEAddressVector addr(base + offset);
       addr.SetMsizeInBytesLog2(instr->ExtractBits(24, 23));
       SVEStructuredStoreHelper(vform,
                                ReadPRegister(instr->GetPgLow8()),
@@ -12750,7 +12862,8 @@ void Simulator::VisitSVEStorePredicateRegister(const Instruction* instr) {
       int pl = GetPredicateLengthInBytes();
       int imm9 = (instr->ExtractBits(21, 16) << 3) | instr->ExtractBits(12, 10);
       uint64_t multiplier = ExtractSignedBitfield64(8, 0, imm9);
-      uint64_t address = ReadXRegister(instr->GetRn()) + multiplier * pl;
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
+      uint64_t address = base + multiplier * pl;
       for (int i = 0; i < pl; i++) {
         MemWrite(address + i, pt.GetLane<uint8_t>(i));
       }
@@ -12770,7 +12883,8 @@ void Simulator::VisitSVEStoreVectorRegister(const Instruction* instr) {
       int vl = GetVectorLengthInBytes();
       int imm9 = (instr->ExtractBits(21, 16) << 3) | instr->ExtractBits(12, 10);
       uint64_t multiplier = ExtractSignedBitfield64(8, 0, imm9);
-      uint64_t address = ReadXRegister(instr->GetRn()) + multiplier * vl;
+      uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
+      uint64_t address = base + multiplier * vl;
       for (int i = 0; i < vl; i++) {
         MemWrite(address + i, zt.GetLane<uint8_t>(i));
       }
@@ -13752,10 +13866,11 @@ void Simulator::VisitSVEContiguousLoad_ScalarPlusImm(const Instruction* instr) {
   int esize_in_bytes_log2 = instr->GetSVEEsizeFromDtype(is_signed);
   VIXL_ASSERT(esize_in_bytes_log2 >= msize_in_bytes_log2);
   int vl_divisor_log2 = esize_in_bytes_log2 - msize_in_bytes_log2;
+  uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
   uint64_t offset =
       (instr->ExtractSignedBits(19, 16) * vl) / (1 << vl_divisor_log2);
   VectorFormat vform = SVEFormatFromLaneSizeInBytesLog2(esize_in_bytes_log2);
-  LogicSVEAddressVector addr(ReadXRegister(instr->GetRn()) + offset);
+  LogicSVEAddressVector addr(base + offset);
   addr.SetMsizeInBytesLog2(msize_in_bytes_log2);
   SVEStructuredLoadHelper(vform,
                           ReadPRegister(instr->GetPgLow8()),
@@ -13799,9 +13914,10 @@ void Simulator::VisitSVEContiguousLoad_ScalarPlusScalar(
   int esize_in_bytes_log2 = instr->GetSVEEsizeFromDtype(is_signed);
   VIXL_ASSERT(msize_in_bytes_log2 <= esize_in_bytes_log2);
   VectorFormat vform = SVEFormatFromLaneSizeInBytesLog2(esize_in_bytes_log2);
+  uint64_t base = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
   uint64_t offset = ReadXRegister(instr->GetRm());
   offset <<= msize_in_bytes_log2;
-  LogicSVEAddressVector addr(ReadXRegister(instr->GetRn()) + offset);
+  LogicSVEAddressVector addr(base + offset);
   addr.SetMsizeInBytesLog2(msize_in_bytes_log2);
   SVEStructuredLoadHelper(vform,
                           ReadPRegister(instr->GetPgLow8()),
@@ -13820,6 +13936,332 @@ void Simulator::DoUnreachable(const Instruction* instr) {
   abort();
 }
 
+void Simulator::Simulate_XdSP_XnSP_Xm(const Instruction* instr) {
+  VIXL_ASSERT(form_hash_ == Hash("irg_64i_dp_2src"));
+  uint64_t rn = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
+  uint64_t rm = ReadXRegister(instr->GetRm());
+  uint64_t tag = GenerateRandomTag(rm & 0xffff);
+  uint64_t new_val = GetAddressWithAllocationTag(rn, tag);
+  WriteXRegister(instr->GetRd(), new_val, LogRegWrites, Reg31IsStackPointer);
+}
+
+void Simulator::SimulateMTEAddSubTag(const Instruction* instr) {
+  uint64_t rn = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
+  uint64_t rn_tag = GetAllocationTagFromAddress(rn);
+  uint64_t tag_offset = instr->ExtractBits(13, 10);
+  // TODO: implement GCR_EL1.Exclude to provide a tag exclusion list.
+  uint64_t new_tag = ChooseNonExcludedTag(rn_tag, tag_offset);
+
+  uint64_t offset = instr->ExtractBits(21, 16) * kMTETagGranuleInBytes;
+  int carry = 0;
+  if (form_hash_ == Hash("subg_64_addsub_immtags")) {
+    offset = ~offset;
+    carry = 1;
+  } else {
+    VIXL_ASSERT(form_hash_ == Hash("addg_64_addsub_immtags"));
+  }
+  uint64_t new_val =
+      AddWithCarry(kXRegSize, /* set_flags = */ false, rn, offset, carry);
+  new_val = GetAddressWithAllocationTag(new_val, new_tag);
+  WriteXRegister(instr->GetRd(), new_val, LogRegWrites, Reg31IsStackPointer);
+}
+
+void Simulator::SimulateMTETagMaskInsert(const Instruction* instr) {
+  VIXL_ASSERT(form_hash_ == Hash("gmi_64g_dp_2src"));
+  uint64_t mask = ReadXRegister(instr->GetRm());
+  uint64_t tag = GetAllocationTagFromAddress(
+      ReadXRegister(instr->GetRn(), Reg31IsStackPointer));
+  uint64_t mask_bit = 1 << tag;
+  WriteXRegister(instr->GetRd(), mask | mask_bit);
+}
+
+void Simulator::SimulateMTESubPointer(const Instruction* instr) {
+  uint64_t rn = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
+  uint64_t rm = ReadXRegister(instr->GetRm(), Reg31IsStackPointer);
+
+  VIXL_ASSERT((form_hash_ == Hash("subps_64s_dp_2src")) ||
+              (form_hash_ == Hash("subp_64s_dp_2src")));
+  bool set_flags = (form_hash_ == Hash("subps_64s_dp_2src"));
+
+  rn = ExtractSignedBitfield64(55, 0, rn);
+  rm = ExtractSignedBitfield64(55, 0, rm);
+  uint64_t new_val = AddWithCarry(kXRegSize, set_flags, rn, ~rm, 1);
+  WriteXRegister(instr->GetRd(), new_val);
+}
+
+void Simulator::SimulateMTEStoreTagPair(const Instruction* instr) {
+  uint64_t rn = ReadXRegister(instr->GetRn(), Reg31IsStackPointer);
+  uint64_t rt = ReadXRegister(instr->GetRt());
+  uint64_t rt2 = ReadXRegister(instr->GetRt2());
+  int offset = instr->GetImmLSPair() * static_cast<int>(kMTETagGranuleInBytes);
+
+  AddrMode addr_mode = Offset;
+  switch (form_hash_) {
+    case Hash("stgp_64_ldstpair_off"):
+      // Default is the offset mode.
+      break;
+    case Hash("stgp_64_ldstpair_post"):
+      addr_mode = PostIndex;
+      break;
+    case Hash("stgp_64_ldstpair_pre"):
+      addr_mode = PreIndex;
+      break;
+    default:
+      VIXL_UNIMPLEMENTED();
+  }
+
+  uintptr_t address = AddressModeHelper(instr->GetRn(), offset, addr_mode);
+  if (!IsAligned(address, kMTETagGranuleInBytes)) {
+    VIXL_ALIGNMENT_EXCEPTION();
+  }
+
+  int tag = GetAllocationTagFromAddress(rn);
+  meta_data_.SetMTETag(address, tag);
+
+  MemWrite<uint64_t>(address, rt);
+  MemWrite<uint64_t>(address + kXRegSizeInBytes, rt2);
+}
+
+void Simulator::SimulateMTEStoreTag(const Instruction* instr) {
+  uint64_t rt = ReadXRegister(instr->GetRt(), Reg31IsStackPointer);
+  int offset = instr->GetImmLS() * static_cast<int>(kMTETagGranuleInBytes);
+
+  AddrMode addr_mode = Offset;
+  switch (form_hash_) {
+    case Hash("st2g_64soffset_ldsttags"):
+    case Hash("stg_64soffset_ldsttags"):
+    case Hash("stz2g_64soffset_ldsttags"):
+    case Hash("stzg_64soffset_ldsttags"):
+      // Default is the offset mode.
+      break;
+    case Hash("st2g_64spost_ldsttags"):
+    case Hash("stg_64spost_ldsttags"):
+    case Hash("stz2g_64spost_ldsttags"):
+    case Hash("stzg_64spost_ldsttags"):
+      addr_mode = PostIndex;
+      break;
+    case Hash("st2g_64spre_ldsttags"):
+    case Hash("stg_64spre_ldsttags"):
+    case Hash("stz2g_64spre_ldsttags"):
+    case Hash("stzg_64spre_ldsttags"):
+      addr_mode = PreIndex;
+      break;
+    default:
+      VIXL_UNIMPLEMENTED();
+  }
+
+  bool is_pair = false;
+  switch (form_hash_) {
+    case Hash("st2g_64soffset_ldsttags"):
+    case Hash("st2g_64spost_ldsttags"):
+    case Hash("st2g_64spre_ldsttags"):
+    case Hash("stz2g_64soffset_ldsttags"):
+    case Hash("stz2g_64spost_ldsttags"):
+    case Hash("stz2g_64spre_ldsttags"):
+      is_pair = true;
+      break;
+    default:
+      break;
+  }
+
+  bool is_zeroing = false;
+  switch (form_hash_) {
+    case Hash("stz2g_64soffset_ldsttags"):
+    case Hash("stz2g_64spost_ldsttags"):
+    case Hash("stz2g_64spre_ldsttags"):
+    case Hash("stzg_64soffset_ldsttags"):
+    case Hash("stzg_64spost_ldsttags"):
+    case Hash("stzg_64spre_ldsttags"):
+      is_zeroing = true;
+      break;
+    default:
+      break;
+  }
+
+  uintptr_t address = AddressModeHelper(instr->GetRn(), offset, addr_mode);
+
+  if (is_zeroing) {
+    if (!IsAligned(reinterpret_cast<uintptr_t>(address),
+                   kMTETagGranuleInBytes)) {
+      VIXL_ALIGNMENT_EXCEPTION();
+    }
+    VIXL_STATIC_ASSERT(kMTETagGranuleInBytes >= sizeof(uint64_t));
+    VIXL_STATIC_ASSERT(kMTETagGranuleInBytes % sizeof(uint64_t) == 0);
+
+    size_t fill_size = kMTETagGranuleInBytes;
+    if (is_pair) {
+      fill_size += kMTETagGranuleInBytes;
+    }
+
+    size_t fill_offset = 0;
+    while (fill_offset < fill_size) {
+      MemWrite<uint64_t>(address + fill_offset, 0);
+      fill_offset += sizeof(uint64_t);
+    }
+  }
+
+  int tag = GetAllocationTagFromAddress(rt);
+  meta_data_.SetMTETag(address, tag, instr);
+  if (is_pair) {
+    meta_data_.SetMTETag(address + kMTETagGranuleInBytes, tag, instr);
+  }
+}
+
+void Simulator::SimulateMTELoadTag(const Instruction* instr) {
+  uint64_t rt = ReadXRegister(instr->GetRt());
+  int offset = instr->GetImmLS() * static_cast<int>(kMTETagGranuleInBytes);
+
+  switch (form_hash_) {
+    case Hash("ldg_64loffset_ldsttags"):
+      break;
+    default:
+      VIXL_UNIMPLEMENTED();
+  }
+
+  uintptr_t address = AddressModeHelper(instr->GetRn(), offset, Offset);
+  address = AlignDown(address, kMTETagGranuleInBytes);
+  uint64_t tag = meta_data_.GetMTETag(address, instr);
+  WriteXRegister(instr->GetRt(), GetAddressWithAllocationTag(rt, tag));
+}
+
+void Simulator::SimulateCpyFP(const Instruction* instr) {
+  MOPSPHelper<"cpy"_h>(instr);
+  LogSystemRegister(NZCV);
+}
+
+void Simulator::SimulateCpyP(const Instruction* instr) {
+  MOPSPHelper<"cpy"_h>(instr);
+
+  int d = instr->GetRd();
+  int n = instr->GetRn();
+  int s = instr->GetRs();
+
+  // Determine copy direction. For cases in which direction is implementation
+  // defined, use forward.
+  bool is_backwards = false;
+  uint64_t xs = ReadXRegister(s);
+  uint64_t xd = ReadXRegister(d);
+  uint64_t xn = ReadXRegister(n);
+
+  // Ignore the top byte of addresses for comparisons. We can use xn as is,
+  // as it should have zero in bits 63:55.
+  uint64_t xs_tbi = ExtractUnsignedBitfield64(55, 0, xs);
+  uint64_t xd_tbi = ExtractUnsignedBitfield64(55, 0, xd);
+  VIXL_ASSERT(ExtractUnsignedBitfield64(63, 55, xn) == 0);
+  if ((xs_tbi < xd_tbi) && ((xs_tbi + xn) > xd_tbi)) {
+    is_backwards = true;
+    WriteXRegister(s, xs + xn);
+    WriteXRegister(d, xd + xn);
+  }
+
+  ReadNzcv().SetN(is_backwards ? 1 : 0);
+  LogSystemRegister(NZCV);
+}
+
+void Simulator::SimulateCpyM(const Instruction* instr) {
+  VIXL_ASSERT(instr->IsConsistentMOPSTriplet<"cpy"_h>());
+  VIXL_ASSERT(instr->IsMOPSMainOf(GetLastExecutedInstruction(), "cpy"_h));
+
+  int d = instr->GetRd();
+  int n = instr->GetRn();
+  int s = instr->GetRs();
+
+  uint64_t xd = ReadXRegister(d);
+  uint64_t xn = ReadXRegister(n);
+  uint64_t xs = ReadXRegister(s);
+  bool is_backwards = ReadN();
+
+  int step = 1;
+  if (is_backwards) {
+    step = -1;
+    xs--;
+    xd--;
+  }
+
+  while (xn--) {
+    uint8_t temp = MemRead<uint8_t>(xs);
+    MemWrite<uint8_t>(xd, temp);
+    LogMemTransfer(xd, xs, temp);
+    xs += step;
+    xd += step;
+  }
+
+  if (is_backwards) {
+    xs++;
+    xd++;
+  }
+
+  WriteXRegister(d, xd);
+  WriteXRegister(n, 0);
+  WriteXRegister(s, xs);
+}
+
+void Simulator::SimulateCpyE(const Instruction* instr) {
+  USE(instr);
+  VIXL_ASSERT(instr->IsConsistentMOPSTriplet<"cpy"_h>());
+  VIXL_ASSERT(instr->IsMOPSEpilogueOf(GetLastExecutedInstruction(), "cpy"_h));
+  // This implementation does nothing in the epilogue; all copying is completed
+  // in the "main" part.
+}
+
+void Simulator::SimulateSetP(const Instruction* instr) {
+  MOPSPHelper<"set"_h>(instr);
+  LogSystemRegister(NZCV);
+}
+
+void Simulator::SimulateSetM(const Instruction* instr) {
+  VIXL_ASSERT(instr->IsConsistentMOPSTriplet<"set"_h>());
+  VIXL_ASSERT(instr->IsMOPSMainOf(GetLastExecutedInstruction(), "set"_h));
+
+  uint64_t xd = ReadXRegister(instr->GetRd());
+  uint64_t xn = ReadXRegister(instr->GetRn());
+  uint64_t xs = ReadXRegister(instr->GetRs());
+
+  while (xn--) {
+    LogWrite(instr->GetRs(), GetPrintRegPartial(kPrintRegLaneSizeB), xd);
+    MemWrite<uint8_t>(xd++, xs);
+  }
+  WriteXRegister(instr->GetRd(), xd);
+  WriteXRegister(instr->GetRn(), 0);
+}
+
+void Simulator::SimulateSetE(const Instruction* instr) {
+  USE(instr);
+  VIXL_ASSERT(instr->IsConsistentMOPSTriplet<"set"_h>());
+  VIXL_ASSERT(instr->IsMOPSEpilogueOf(GetLastExecutedInstruction(), "set"_h));
+  // This implementation does nothing in the epilogue; all setting is completed
+  // in the "main" part.
+}
+
+void Simulator::SimulateSetGP(const Instruction* instr) {
+  MOPSPHelper<"setg"_h>(instr);
+
+  uint64_t xd = ReadXRegister(instr->GetRd());
+  uint64_t xn = ReadXRegister(instr->GetRn());
+
+  if ((xn > 0) && !IsAligned(xd, kMTETagGranuleInBytes)) {
+    VIXL_ALIGNMENT_EXCEPTION();
+  }
+
+  if (!IsAligned(xn, kMTETagGranuleInBytes)) {
+    VIXL_ALIGNMENT_EXCEPTION();
+  }
+
+  LogSystemRegister(NZCV);
+}
+
+void Simulator::SimulateSetGM(const Instruction* instr) {
+  uint64_t xd = ReadXRegister(instr->GetRd());
+  uint64_t xn = ReadXRegister(instr->GetRn());
+
+  int tag = GetAllocationTagFromAddress(xd);
+  while (xn) {
+    meta_data_.SetMTETag(xd, tag);
+    xd += 16;
+    xn -= 16;
+  }
+  SimulateSetM(instr);
+}
 
 void Simulator::DoTrace(const Instruction* instr) {
   VIXL_ASSERT((instr->Mask(ExceptionMask) == HLT) &&
@@ -14070,6 +14512,39 @@ void Simulator::DoRestoreCPUFeatures(const Instruction* instr) {
 
   SetCPUFeatures(saved_cpu_features_.back());
   saved_cpu_features_.pop_back();
+}
+
+void* Simulator::Mmap(
+    void* address, size_t length, int prot, int flags, int fd, off_t offset) {
+  // The underlying system `mmap` in the simulated environment doesn't recognize
+  // PROT_BTI and PROT_MTE. Although the kernel probably just ignores the bits
+  // it doesn't know, mask those protections out before calling is safer.
+  int intenal_prot = prot;
+  prot &= ~(PROT_BTI | PROT_MTE);
+
+  uint64_t address2 = reinterpret_cast<uint64_t>(
+      mmap(address, length, prot, flags, fd, offset));
+
+  if (intenal_prot & PROT_MTE) {
+    // The returning address of `mmap` isn't tagged.
+    int tag = static_cast<int>(GenerateRandomTag());
+    SetGranuleTag(address2, tag, length);
+    address2 = GetAddressWithAllocationTag(address2, tag);
+  }
+
+  return reinterpret_cast<void*>(address2);
+}
+
+
+int Simulator::Munmap(void* address, size_t length, int prot) {
+  if (prot & PROT_MTE) {
+    // Untag the address since `munmap` doesn't recognize the memory tagging
+    // managed by the Simulator.
+    address = AddressUntag(address);
+    CleanGranuleTag(reinterpret_cast<char*>(address), length);
+  }
+
+  return munmap(address, length);
 }
 
 
